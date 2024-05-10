@@ -295,8 +295,19 @@ function frontmatter(doc, showheader=true) {
         header;
 }
 
+function frontmatterFolder(name, showheader=true) {
+    let header = showheader ? `\n# ${name}\n` : "";
+    return FRONTMATTER + 
+        `title: "${name}"\n` + 
+        `icon: ":folder:"\n` +
+        `aliases: "${name}"\n` + 
+        `tags:\n  - "toc"\n` +
+        FRONTMATTER +
+        header;
+}
 
 async function oneJournal(path, journal) {
+    const prefix = "_";
     let subpath = path;
     if (journal.pages.size > 1) {
         // Put all the notes in a sub-folder
@@ -308,7 +319,8 @@ async function oneJournal(path, journal) {
             markdown += `\n${' '.repeat(2*(page.title.level-1))}- ${formatLink(docfilename(page), page.name)}`;
         }
         // Filename must match the folder name
-        zip.folder(subpath).file(zipfilename(journal), markdown, { binary: false });
+        const tocName = use_uuid_for_journal_folder ? zipfilename(journal) : prefix + zipfilename(journal);
+        zip.folder(subpath).file(tocName, markdown, { binary: false });
     }
 
     for (const page of journal.pages) {
@@ -563,12 +575,31 @@ async function oneChatLog(path, chatlog) {
 
 async function oneFolder(path, folder) {
     let subpath = formpath(path, validFilename(folder.name));
-    for (const journal of folder.contents) {
+    let toc = [];
+    for (const journal of folder.contents.sort((a,b) => a.sort - b.sort)) {
         await oneDocument(subpath, journal);
+        console.log("Sort -> " +  journal.name + " -> " + journal.sort);
+        if (folder.type = "JournalEntry") {
+            const journalPath = formpath(subpath, use_uuid_for_journal_folder ? docfilename(journal) : validFilename(journal.name));
+            const journalLink = formatLink(docfilename(journal), journal.name)
+            toc.push(journalLink);
+        }
     }
+    tableOfContents(subpath, folder.name, zipfilename(folder), toc);
     for (const childfolder of folder.getSubfolders(/*recursive*/false)) {
         await oneFolder(subpath, childfolder);
     }
+}
+
+// Creat a Table Of Contents file given the path of the file, name of the file,
+// and an array of links to include in the Table of Contents
+async function tableOfContents (path, name, fileName, toc) {
+    const prefix = "_";
+    let markdown = frontmatterFolder(name) + "\n## Table of Contents\n";
+    for (const link of toc) {
+        markdown += `\n- ${link}`;
+    }
+    zip.folder(path).file(prefix + fileName, markdown, { binary: false });
 }
 
 async function onePack(path, pack) {
