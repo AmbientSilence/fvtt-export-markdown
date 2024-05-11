@@ -56,7 +56,12 @@ export function validFilename(name) {
 }
 
 function docfilename(doc) {
-    return use_uuid_for_notename ? doc.uuid : validFilename(doc.name);
+    // If doc is actually a CompendiumCollection use it's title rather than name.
+    if(doc instanceof CompendiumCollection) {
+        return use_uuid_for_notename ? doc.uuid : validFilename(doc.title);
+    } else {
+        return use_uuid_for_notename ? doc.uuid : validFilename(doc.name);
+    }
 }
 
 function zipfilename(doc) {
@@ -307,7 +312,6 @@ function frontmatterFolder(name, showheader=true) {
 }
 
 async function oneJournal(path, journal) {
-    const prefix = "_";
     let subpath = path;
     if (journal.pages.size > 1) {
         // Put all the notes in a sub-folder
@@ -319,7 +323,7 @@ async function oneJournal(path, journal) {
             markdown += `\n${' '.repeat(2*(page.title.level-1))}- ${formatLink(docfilename(page), page.name)}`;
         }
         // Filename must match the folder name
-        const tocName = use_uuid_for_journal_folder ? zipfilename(journal) : prefix + zipfilename(journal);
+        const tocName = use_uuid_for_journal_folder ? zipfilename(journal) : PREFIX + zipfilename(journal);
         zip.folder(subpath).file(tocName, markdown, { binary: false });
     }
 
@@ -576,58 +580,80 @@ async function oneChatLog(path, chatlog) {
 async function oneFolder(path, folder) {
     let subpath = formpath(path, validFilename(folder.name));
     let toc = [];
-    for (const journal of folder.contents.sort((a,b) => a.sort - b.sort)) {
-        await oneDocument(subpath, journal);
-        console.log("Sort -> " +  journal.name + " -> " + journal.sort);
-        if (folder.type = "JournalEntry") {
-            const journalPath = formpath(subpath, use_uuid_for_journal_folder ? docfilename(journal) : validFilename(journal.name));
-            const journalLink = formatLink(docfilename(journal), journal.name)
-            toc.push(journalLink);
-        }
+    for (const doc of folder.contents.sort((a,b) => a.sort - b.sort)) {
+        await oneDocument(subpath, doc);
+        toc.push(tocLink(subpath, doc));
     }
-    tableOfContents(subpath, folder.name, zipfilename(folder), toc);
+    if(toc.length) {
+        tableOfContents(subpath, folder.name, zipfilename(folder), toc);
+    }
     for (const childfolder of folder.getSubfolders(/*recursive*/false)) {
         await oneFolder(subpath, childfolder);
     }
 }
 
-// Creat a Table Of Contents file given the path of the file, name of the file,
-// and an array of links to include in the Table of Contents
-async function tableOfContents (path, name, fileName, toc) {
-    const prefix = "_";
-    let markdown = frontmatterFolder(name) + "\n## Table of Contents\n";
-    for (const link of toc) {
-        markdown += `\n- ${link}`;
-    }
-    zip.folder(path).file(prefix + fileName, markdown, { binary: false });
-}
-
 async function onePack(path, pack) {
+    let toc = [];
     let type = pack.metadata.type;
     console.debug(`Collecting pack '${pack.title}'`)
     let subpath = formpath(path, validFilename(pack.title));
     const documents = await pack.getDocuments();
-    for (const doc of documents) {
+    for (const doc of documents.sort((a,b) => a.sort - b.sort)) {
         if (!doc.folder) {
             await oneDocument(subpath, doc);
+            toc.push(tocLink(subpath, doc));
         }
+    }
+    if(toc.length) {
+        tableOfContents(subpath, pack.title, zipfilename(pack), toc);
     }
     await compendiumFolders(subpath, pack.folders, documents, 1);
 }
 
+const PREFIX = "_";
+
+function tocLink (path, doc) {
+    let docName;
+    let subpath;
+    if (doc instanceof JournalEntry && doc.pages.size > 1) {
+        docName = PREFIX + doc.name;
+        subpath = formpath(path, validFilename(doc.name));
+    } else {
+        docName = doc.name;
+        subpath = path;
+    }
+    const docPath = formpath(subpath, use_uuid_for_journal_folder ? docfilename(doc) : validFilename(docName));
+    const docLink = formatLink(docPath, doc.name)
+    return docLink;
+}
+
+// Creat a Table Of Contents file given the path of the file, name of the file,
+// and an array of links to include in the Table of Contents
+async function tableOfContents (path, name, fileName, toc) {
+    let markdown = frontmatterFolder(name) + "\n## Table of Contents\n";
+    for (const link of toc) {
+        markdown += `\n- ${link}`;
+    }
+    zip.folder(path).file(PREFIX + fileName, markdown, { binary: false });
+}
+
 async function compendiumFolders(path, folders, docs, depth) {
     for (const folder of folders) {
-        // console.log(JSON.stringify(folder));
+        let toc = [];
         if (folder instanceof Folder && typeof(folder.depth) != "undefined" && folder.depth === depth) {
-            // console.log(folder.name + " Depth -> " + folder.depth);
             let subpath = formpath(path, validFilename(folder.name));
             let contents = folder.contents;
-            for (const item of contents) {
+            for (const item of contents.sort((a,b) => a.sort - b.sort)) {
                 const doc = docs.find(({uuid}) => uuid === item.uuid);
                 if (doc) {
                     await oneDocument(subpath, doc);
+                    toc.push(tocLink(subpath, doc));
                 }
             }
+            if(toc.length) {
+                tableOfContents(subpath, folder.name, zipfilename(folder), toc);
+            }
+
             let children = folder.children;
             if (children) {
                 let childFolders = [];
