@@ -295,6 +295,7 @@ function frontmatter(doc, showheader=true) {
         `icon: "${DOCUMENT_ICON.lookup(doc)}"\n` +
         `aliases: "${doc.name}"\n` + 
         `foundryId: ${doc.uuid}\n` + 
+        `sortOrder: ${doc.sort}\n` + 
         `tags:\n  - ${doc.documentName}\n` +
         FRONTMATTER +
         header;
@@ -305,7 +306,8 @@ function frontmatterFolder(name, showheader=true) {
     return FRONTMATTER + 
         `title: "${name}"\n` + 
         `icon: ":folder:"\n` +
-        `aliases: "${name}"\n` + 
+        `aliases: "${name}"\n` +
+        `sortOrder: ${doc.sort}\n` +  
         `tags:\n  - "toc"\n` +
         FRONTMATTER +
         header;
@@ -617,10 +619,10 @@ function tocLink (path, doc) {
     let subpath;
     if (doc instanceof JournalEntry && doc.pages.size > 1) {
         docName = PREFIX + doc.name;
-        subpath = formpath(path, validFilename(doc.name));
+        subpath = formpath(".", validFilename(doc.name));
     } else {
         docName = doc.name;
-        subpath = path;
+        subpath = ".";
     }
     const docPath = formpath(subpath, use_uuid_for_journal_folder ? docfilename(doc) : validFilename(docName));
     const docLink = formatLink(docPath, doc.name)
