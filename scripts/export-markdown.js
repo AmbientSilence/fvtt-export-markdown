@@ -301,13 +301,13 @@ function frontmatter(doc, showheader=true) {
         header;
 }
 
-function frontmatterFolder(name, showheader=true) {
+function frontmatterFolder(name, sort=0, showheader=true) {
     let header = showheader ? `\n# ${name}\n` : "";
     return FRONTMATTER + 
         `title: "${name}"\n` + 
         `icon: ":folder:"\n` +
         `aliases: "${name}"\n` +
-        `sortOrder: ${doc.sort}\n` +  
+        `sortOrder: ${sort}\n` +  
         `tags:\n  - "toc"\n` +
         FRONTMATTER +
         header;
@@ -587,7 +587,7 @@ async function oneFolder(path, folder) {
         toc.push(tocLink(subpath, doc));
     }
     if(toc.length) {
-        tableOfContents(subpath, folder.name, zipfilename(folder), toc);
+        tableOfContents(subpath, folder.name, zipfilename(folder), toc, folder.sort);
     }
     for (const childfolder of folder.getSubfolders(/*recursive*/false)) {
         await oneFolder(subpath, childfolder);
@@ -600,16 +600,31 @@ async function onePack(path, pack) {
     console.debug(`Collecting pack '${pack.title}'`)
     let subpath = formpath(path, validFilename(pack.title));
     const documents = await pack.getDocuments();
+    let folders = pack.folders;
+    for (const folder of folders) {
+        toc.push(tocFolderLink(subpath, folder));
+    }
     for (const doc of documents.sort((a,b) => a.sort - b.sort)) {
         if (!doc.folder) {
             await oneDocument(subpath, doc);
             toc.push(tocLink(subpath, doc));
         }
     }
+    let sort = 0;
+    if (pack.sort) {
+        sort = pack.sort;
+    }
     if(toc.length) {
-        tableOfContents(subpath, pack.title, zipfilename(pack), toc);
+        tableOfContents(subpath, pack.title, zipfilename(pack), toc, sort);
     }
     await compendiumFolders(subpath, pack.folders, documents, 1);
+}
+
+async function onePackFolder(path, folder) {
+    let subpath = formpath(path, validFilename(folder.name));
+    for (const pack of game.packs.filter(pack => pack.folder === folder)) {
+        await onePack(subpath, pack);
+    }
 }
 
 const PREFIX = "_";
@@ -629,10 +644,17 @@ function tocLink (path, doc) {
     return docLink;
 }
 
+function tocFolderLink (path, folder) {
+    const name = folder.name;
+    const folderPath = formpath(path, use_uuid_for_journal_folder ? docfilename(folder) : validFilename(folder.name));
+    const folderLink = formatLink(folderPath, folder.name)
+    return folderLink;
+}
+
 // Creat a Table Of Contents file given the path of the file, name of the file,
 // and an array of links to include in the Table of Contents
-async function tableOfContents (path, name, fileName, toc) {
-    let markdown = frontmatterFolder(name) + "\n## Table of Contents\n";
+async function tableOfContents (path, name, fileName, toc, sort=0) {
+    let markdown = frontmatterFolder(name, sort) + "\n## Table of Contents\n";
     for (const link of toc) {
         markdown += `\n- ${link}`;
     }
@@ -644,6 +666,17 @@ async function compendiumFolders(path, folders, docs, depth) {
         let toc = [];
         if (folder instanceof Folder && typeof(folder.depth) != "undefined" && folder.depth === depth) {
             let subpath = formpath(path, validFilename(folder.name));
+
+            let children = folder.children;
+            if (children.length != 0) {
+                let childFolders = [];
+                for (const child of children) {
+                    childFolders.push(child.folder);
+                    toc.push(tocFolderLink(subpath, child));
+                }
+                await compendiumFolders(subpath, childFolders, docs, depth + 1);
+            }
+
             let contents = folder.contents;
             for (const item of contents.sort((a,b) => a.sort - b.sort)) {
                 const doc = docs.find(({uuid}) => uuid === item.uuid);
@@ -653,25 +686,9 @@ async function compendiumFolders(path, folders, docs, depth) {
                 }
             }
             if(toc.length) {
-                tableOfContents(subpath, folder.name, zipfilename(folder), toc);
-            }
-
-            let children = folder.children;
-            if (children) {
-                let childFolders = [];
-                for (const child of children) {
-                    childFolders.push(child.folder);
-                }
-                await compendiumFolders(subpath, childFolders, docs, depth + 1);
+                tableOfContents(subpath, folder.name, zipfilename(folder), toc, folder.sort);
             }
         }
-    }
-}
-
-async function onePackFolder(path, folder) {
-    let subpath = formpath(path, validFilename(folder.name));
-    for (const pack of game.packs.filter(pack => pack.folder === folder)) {
-        await onePack(subpath, pack);
     }
 }
 
