@@ -19,6 +19,8 @@ let zip;
 
 const IMG_SIZE = "150";
 
+const ITEM_BREAK = "ITEMS";
+
 let use_uuid_for_journal_folder=true;
 let use_uuid_for_notename=true;
 
@@ -604,16 +606,22 @@ async function oneFolder(path, folder, sort=100) {
     let subpath = formpath(path, validFilename(folder.name));
     let toc = [];
     let subsort = sort * 10;
-    for (const doc of folder.contents.sort((a,b) => a.sort - b.sort)) {
+    for (const childfolder of folder.getSubfolders(/*recursive*/false)) {
+        subsort += 1;
+        await oneFolder(subpath, childfolder, subsort);
+        toc.push(tocFolderLink(formpath(subpath, validFilename(childfolder.name)), childfolder, subsort));
+    }
+    const documents = folder.contents;
+    if (toc.length > 0 && documents.length > 0) {
+        toc.push(ITEM_BREAK);
+    }
+    for (const doc of documents.sort((a,b) => a.sort - b.sort)) {
         subsort += 1;
         await oneDocument(subpath, doc, subsort);
         toc.push(tocLink(subpath, doc));
     }
-    if(toc.length) {
+    if(toc.length > 0) {
         tableOfContents(subpath, folder.name, zipfilename(folder), toc, sort);
-    }
-    for (const childfolder of folder.getSubfolders(/*recursive*/false)) {
-        await oneFolder(subpath, childfolder);
     }
 }
 
@@ -625,9 +633,15 @@ async function onePack(path, pack, sort=100) {
     const documents = await pack.getDocuments();
     let folders = pack.folders;
     let subsort = sort * 10;
+    let depth = 1;
     for (const folder of folders) {
-        subsort += 1;
-        toc.push(tocFolderLink(formpath(subpath, validFilename(folder.name)), folder, subsort));
+        if(folder.depth == depth) {
+            subsort += 1;
+            toc.push(tocFolderLink(formpath(subpath, validFilename(folder.name)), folder, subsort));
+        }
+    }
+    if (toc.length > 0 && documents.length > 0) {
+        toc.push(ITEM_BREAK);
     }
     for (const doc of documents.sort((a,b) => a.sort - b.sort)) {
         if (!doc.folder) {
@@ -636,14 +650,10 @@ async function onePack(path, pack, sort=100) {
             toc.push(tocLink(subpath, doc));
         }
     }
-    /*let sort = 0;
-    if (pack.sort) {
-        sort = pack.sort;
-    }*/
-    if(toc.length) {
+    if(toc.length > 0) {
         tableOfContents(subpath, pack.title, zipfilename(pack), toc, sort);
     }
-    await compendiumFolders(subpath, pack.folders, documents, 1, sort);
+    await compendiumFolders(subpath, folders, documents, depth, sort);
 }
 
 async function onePackFolder(path, folder, sort=100) {
@@ -682,9 +692,9 @@ function tocFolderLink (path, folder) {
 async function tableOfContents (path, name, fileName, toc, sort=100) {
     let markdown = frontmatterFolder(name, sort, true, true) + "\n## Table of Contents\n";
     for (const link of toc) {
-        markdown += `\n- ${link}`;
+        markdown += link != ITEM_BREAK ? `\n- ${link}` : '\n---';
     }
-    zip.folder(path).file(fileName, markdown, { binary: false });
+    zip.folder(path).file(fileName,  markdown, { binary: false });
 }
 
 async function compendiumFolders(path, folders, docs, depth, sort=100) {
@@ -700,13 +710,16 @@ async function compendiumFolders(path, folders, docs, depth, sort=100) {
                 let childFolders = [];
                 for (const child of children) {
                     childFolders.push(child.folder);
-                    toc.push(tocFolderLink(subpath, child.folder));
+                    toc.push(tocFolderLink(formpath(subpath, validFilename(child.folder.name)), child.folder));
                 }
                 await compendiumFolders(subpath, childFolders, docs, depth + 1, subsort);
             }
 
             let contents = folder.contents;
             let subsubsort = subsort * 10;
+            if (toc.length > 0 && contents.length > 0) {
+               toc.push(ITEM_BREAK);
+            }
             for (const item of contents.sort((a,b) => a.sort - b.sort)) {
                 const doc = docs.find(({uuid}) => uuid === item.uuid);
                 subsubsort += 1;
