@@ -288,48 +288,59 @@ export function convertHtml(doc, html) {
     return markdown;
 }
 
-function frontmatter(doc, showheader=true) {
+// The number of characters to use in the sort.
+// This needs to be big enough so that each level sorts properly.
+const sortPadding = 10;
+
+function frontmatter(doc, sort=100, showheader=true, index=false) {
     let header = showheader ? `\n# ${doc.name}\n` : "";
+    let sortFormated = sort.toString().padStart(sortPadding,'0');
+    let title = index ? "Index of " + doc.name : doc.name;
+    console.log(doc.name + " sort = " + sort + " | formated sort = " + sortFormated);
     return FRONTMATTER + 
-        `title: "${doc.name}"\n` + 
+        `title: "${title}"\n` + 
         `icon: "${DOCUMENT_ICON.lookup(doc)}"\n` +
         `aliases: "${doc.name}"\n` + 
         `foundryId: ${doc.uuid}\n` + 
-        `sortOrder: ${doc.sort}\n` + 
+        `sortOrder: "${sortFormated}"\n` + 
         `tags:\n  - ${doc.documentName}\n` +
         FRONTMATTER +
         header;
 }
 
-function frontmatterFolder(name, sort=0, showheader=true) {
+function frontmatterFolder(name, sort=100, showheader=true, index=false) {
     let header = showheader ? `\n# ${name}\n` : "";
+    let sortFormated = sort.toString().padStart(sortPadding,'0');
+    let title = index ? "Index of " + name : name;
+    console.log(name + " sort = " + sort + " | formated sort = " + sortFormated);
     return FRONTMATTER + 
-        `title: "${name}"\n` + 
+        `title: "${title}"\n` + 
         `icon: ":folder:"\n` +
         `aliases: "${name}"\n` +
-        `sortOrder: ${sort}\n` +  
+        `sortOrder: "${sortFormated}"\n` +  
         `tags:\n  - "toc"\n` +
         FRONTMATTER +
         header;
 }
 
-async function oneJournal(path, journal) {
+async function oneJournal(path, journal, sort=100) {
     let subpath = path;
     if (journal.pages.size > 1) {
         // Put all the notes in a sub-folder
         subpath = formpath(path, use_uuid_for_journal_folder ? docfilename(journal) : validFilename(journal.name));
         // TOC page 
         // This is a Folder note, so goes INSIDE the folder for this journal entry
-        let markdown = frontmatter(journal) + "\n## Table of Contents\n";
+        let markdown = frontmatter(journal, sort, true, true) + "\n## Table of Contents\n";
         for (let page of journal.pages.contents.sort((a,b) => a.sort - b.sort)) {
             markdown += `\n${' '.repeat(2*(page.title.level-1))}- ${formatLink(docfilename(page), page.name)}`;
         }
         // Filename must match the folder name
         const tocName = use_uuid_for_journal_folder ? zipfilename(journal) : PREFIX + zipfilename(journal);
-        zip.folder(subpath).file(tocName, markdown, { binary: false });
+        zip.folder(path).file(tocName, markdown, { binary: false });
     }
 
-    for (const page of journal.pages) {
+    let subsort = journal.pages.size > 1 ? sort * 10 : sort;
+    for (const page of journal.pages.contents.sort((a,b) => a.sort - b.sort)) {
         let markdown;
         switch (page.type) {
             case "text":
@@ -348,14 +359,15 @@ async function oneJournal(path, journal) {
                 break;
         }
         if (markdown) {
-            markdown = frontmatter(page, page.title.show) + markdown;
+            markdown = frontmatter(page, subsort, page.title.show) + markdown;
             zip.folder(subpath).file(`${notefilename(page)}.md`, markdown, { binary: false });
         }
+        subsort += 1;
     }
 }
 
-async function oneRollTable(path, table) {
-    let markdown = frontmatter(table);
+async function oneRollTable(path, table, sort=100) {
+    let markdown = frontmatter(table, sort);
     
     if (table.description) markdown += table.description + "\n\n";
 
@@ -373,7 +385,7 @@ async function oneRollTable(path, table) {
     zip.folder(path).file(zipfilename(table), markdown, { binary: false });
 }
 
-function oneScene(path, scene) {
+function oneScene(path, scene, sort=100) {
 
     const sceneBottom = scene.dimensions.sceneRect.bottom;
     const sceneLeft   = scene.dimensions.sceneRect.left;
@@ -384,7 +396,7 @@ function oneScene(path, scene) {
     }
     function coord2(pixely, pixelx) { return `${coord(sceneBottom - pixely)}, ${coord(pixelx - sceneLeft)}` };
 
-    let markdown = frontmatter(scene);
+    let markdown = frontmatter(scene, sort);
 
     // Two "image:" lines just appear as separate layers in leaflet.
     let overlays=[]
@@ -445,7 +457,7 @@ function oneScene(path, scene) {
     zip.folder(path).file(zipfilename(scene), markdown, { binary: false });
 }
 
-function onePlaylist(path, playlist) {
+function onePlaylist(path, playlist, sort=100) {
     // playlist.description
     // playlist.fade
     // playlist.mode
@@ -462,7 +474,7 @@ function onePlaylist(path, playlist) {
     //    - repeat (bool)
     //    - volume
 
-    let markdown = frontmatter(playlist);
+    let markdown = frontmatter(playlist, sort);
 
     if (playlist.description) markdown += playlist.description + EOL + EOL;
 
@@ -477,14 +489,14 @@ function onePlaylist(path, playlist) {
     zip.folder(path).file(zipfilename(playlist), markdown, { binary: false });
 }
 
-async function documentToJSON(path, doc) {
+async function documentToJSON(path, doc, sort=100) {
     // see Foundry exportToJSON
 
     const data = doc.toCompendium(null);
     // Remove things the user is unlikely to need
     if (data.prototypeToken) delete data.prototypeToken;
 
-    let markdown = frontmatter(doc);
+    let markdown = frontmatter(doc, sort);
     if (doc.img) markdown += fileconvert(doc.img, IMG_SIZE) + EOL + EOL;
 
     // Some common locations for descriptions
@@ -519,9 +531,9 @@ async function documentToJSON(path, doc) {
     zip.folder(path).file(zipfilename(doc), markdown, { binary: false });
 }
 
-async function maybeTemplate(path, doc) {
+async function maybeTemplate(path, doc, sort=100) {
     const templatePath = templateFile(doc);
-    if (!templatePath) return documentToJSON(path, doc);
+    if (!templatePath) return documentToJSON(path, doc, sort=100);
     // console.log(`Using handlebars template '${templatePath}' for '${doc.name}'`)
 
     // Always upload the IMG, if present, but we won't include the corresponding markdown
@@ -538,17 +550,17 @@ async function maybeTemplate(path, doc) {
     zip.folder(path).file(zipfilename(doc), markdown, { binary: false });
 }
 
-async function oneDocument(path, doc) {
+async function oneDocument(path, doc, sort=100) {
     if (doc instanceof JournalEntry)
-        await oneJournal(path, doc);
+        await oneJournal(path, doc, sort);
     else if (doc instanceof RollTable)
-        await oneRollTable(path, doc);
+        await oneRollTable(path, doc, sort);
     else if (doc instanceof Scene && game.settings.get(MOD_CONFIG.MODULE_NAME, MOD_CONFIG.OPTION_LEAFLET))
-        await oneScene(path, doc);
+        await oneScene(path, doc, sort);
     else if (doc instanceof Playlist)
-        await onePlaylist(path, doc);
+        await onePlaylist(path, doc, sort);
     else
-        await maybeTemplate(path, doc);
+        await maybeTemplate(path, doc, sort);
     // Actor
     // Cards
     // ChatMessage
@@ -579,55 +591,62 @@ async function oneChatLog(path, chatlog) {
     zip.folder(path).file(filename, log, { binary: false });
 }
 
-async function oneFolder(path, folder) {
+async function oneFolder(path, folder, sort=100) {
     let subpath = formpath(path, validFilename(folder.name));
     let toc = [];
+    let subsort = sort * 10;
     for (const doc of folder.contents.sort((a,b) => a.sort - b.sort)) {
-        await oneDocument(subpath, doc);
+        subsort += 1;
+        await oneDocument(subpath, doc, subsort);
         toc.push(tocLink(subpath, doc));
     }
     if(toc.length) {
-        tableOfContents(subpath, folder.name, zipfilename(folder), toc, folder.sort);
+        tableOfContents(path, folder.name, zipfilename(folder), toc, sort);
     }
     for (const childfolder of folder.getSubfolders(/*recursive*/false)) {
         await oneFolder(subpath, childfolder);
     }
 }
 
-async function onePack(path, pack) {
+async function onePack(path, pack, sort=100) {
     let toc = [];
     let type = pack.metadata.type;
     console.debug(`Collecting pack '${pack.title}'`)
     let subpath = formpath(path, validFilename(pack.title));
     const documents = await pack.getDocuments();
     let folders = pack.folders;
+    let subsort = sort * 10;
     for (const folder of folders) {
-        toc.push(tocFolderLink(subpath, folder));
+        subsort += 1;
+        toc.push(tocFolderLink(subpath, folder, subsort));
     }
     for (const doc of documents.sort((a,b) => a.sort - b.sort)) {
         if (!doc.folder) {
-            await oneDocument(subpath, doc);
+            subsort += 1;
+            await oneDocument(subpath, doc, subsort);
             toc.push(tocLink(subpath, doc));
         }
     }
-    let sort = 0;
+    /*let sort = 0;
     if (pack.sort) {
         sort = pack.sort;
-    }
+    }*/
     if(toc.length) {
-        tableOfContents(subpath, pack.title, zipfilename(pack), toc, sort);
+        tableOfContents(path, pack.title, zipfilename(pack), toc, sort);
     }
-    await compendiumFolders(subpath, pack.folders, documents, 1);
+    await compendiumFolders(subpath, pack.folders, documents, 1, sort);
 }
 
-async function onePackFolder(path, folder) {
+async function onePackFolder(path, folder, sort=100) {
     let subpath = formpath(path, validFilename(folder.name));
+    let subsort = sort * 10;
     for (const pack of game.packs.filter(pack => pack.folder === folder)) {
-        await onePack(subpath, pack);
+        subsort += 1;
+        await onePack(subpath, pack, subsort);
     }
 }
 
-const PREFIX = "_";
+const PREFIX = "";
 
 function tocLink (path, doc) {
     let docName;
@@ -639,7 +658,7 @@ function tocLink (path, doc) {
         docName = doc.name;
         subpath = ".";
     }
-    const docPath = formpath(subpath, use_uuid_for_journal_folder ? docfilename(doc) : validFilename(docName));
+    const docPath = formpath(path, use_uuid_for_journal_folder ? docfilename(doc) : validFilename(docName));
     const docLink = formatLink(docPath, doc.name)
     return docLink;
 }
@@ -653,17 +672,19 @@ function tocFolderLink (path, folder) {
 
 // Creat a Table Of Contents file given the path of the file, name of the file,
 // and an array of links to include in the Table of Contents
-async function tableOfContents (path, name, fileName, toc, sort=0) {
-    let markdown = frontmatterFolder(name, sort) + "\n## Table of Contents\n";
+async function tableOfContents (path, name, fileName, toc, sort=100) {
+    let markdown = frontmatterFolder(name, sort, true, true) + "\n## Table of Contents\n";
     for (const link of toc) {
         markdown += `\n- ${link}`;
     }
     zip.folder(path).file(PREFIX + fileName, markdown, { binary: false });
 }
 
-async function compendiumFolders(path, folders, docs, depth) {
+async function compendiumFolders(path, folders, docs, depth, sort=100) {
+    let subsort = sort * 10;
     for (const folder of folders) {
         let toc = [];
+        subsort += 1;
         if (folder instanceof Folder && typeof(folder.depth) != "undefined" && folder.depth === depth) {
             let subpath = formpath(path, validFilename(folder.name));
 
@@ -674,19 +695,27 @@ async function compendiumFolders(path, folders, docs, depth) {
                     childFolders.push(child.folder);
                     toc.push(tocFolderLink(subpath, child));
                 }
-                await compendiumFolders(subpath, childFolders, docs, depth + 1);
+                await compendiumFolders(subpath, childFolders, docs, depth + 1, subsort);
             }
 
             let contents = folder.contents;
+            let subsubsort = subsort * 10;
             for (const item of contents.sort((a,b) => a.sort - b.sort)) {
                 const doc = docs.find(({uuid}) => uuid === item.uuid);
+                subsubsort += 1;
                 if (doc) {
-                    await oneDocument(subpath, doc);
+                    await oneDocument(subpath, doc, subsubsort);
                     toc.push(tocLink(subpath, doc));
                 }
             }
             if(toc.length) {
-                tableOfContents(subpath, folder.name, zipfilename(folder), toc, folder.sort);
+                let sort = 0;
+                if (depth > 0) {
+                    sort = folder.sort * depth;
+                } else {
+                    sort = folder.sort;
+                }
+                tableOfContents(path, folder.name, zipfilename(folder), toc, subsort);
             }
         }
     }
