@@ -15,11 +15,13 @@ const destForImages = "zz_asset-files";
 
 let zip;
 
-
-
 const IMG_SIZE = "150";
-
 const ITEM_BREAK = "ITEMS";
+export const SORT_DEFAULT = 100;
+
+// The number of characters to use in the sort.
+// This needs to be big enough so that each level sorts properly.
+export const SORT_PADDING = 10;
 
 let use_uuid_for_journal_folder=true;
 let use_uuid_for_notename=true;
@@ -290,13 +292,9 @@ export function convertHtml(doc, html) {
     return markdown;
 }
 
-// The number of characters to use in the sort.
-// This needs to be big enough so that each level sorts properly.
-const sortPadding = 10;
-
-function frontmatter(doc, sort=100, showheader=true, index=false) {
+function frontmatter(doc, sort=SORT_DEFAULT, showheader=true, index=false) {
     let header = showheader ? `\n# ${doc.name}\n` : "";
-    let sortFormated = sort.toString().padStart(sortPadding,'0');
+    let sortFormated = sort.toString().padStart(SORT_PADDING,'0');
     let title = index ? "Index of " + doc.name : doc.name;
     return FRONTMATTER + 
         `title: "${title}"\n` + 
@@ -309,9 +307,9 @@ function frontmatter(doc, sort=100, showheader=true, index=false) {
         header;
 }
 
-function frontmatterFolder(name, sort=100, showheader=true, index=false) {
+function frontmatterFolder(name, sort=SORT_DEFAULT, showheader=true, index=false) {
     let header = showheader ? `\n# ${name}\n` : "";
-    let sortFormated = sort.toString().padStart(sortPadding,'0');
+    let sortFormated = sort.toString().padStart(SORT_PADDING,'0');
     let title = index ? "Index of " + name : name;
     return FRONTMATTER + 
         `title: "${title}"\n` + 
@@ -323,7 +321,7 @@ function frontmatterFolder(name, sort=100, showheader=true, index=false) {
         header;
 }
 
-async function oneJournal(path, journal, sort=100) {
+async function oneJournal(path, journal, sort=SORT_DEFAULT) {
     let subpath = path;
     if (journal.pages.size > 1) {
         // Put all the notes in a sub-folder
@@ -377,7 +375,7 @@ async function oneJournal(path, journal, sort=100) {
     }
 }
 
-async function oneRollTable(path, table, sort=100) {
+async function oneRollTable(path, table, sort=SORT_DEFAULT) {
     let markdown = frontmatter(table, sort);
     
     if (table.description) markdown += table.description + "\n\n";
@@ -396,7 +394,7 @@ async function oneRollTable(path, table, sort=100) {
     zip.folder(path).file(zipfilename(table), markdown, { binary: false });
 }
 
-function oneScene(path, scene, sort=100) {
+function oneScene(path, scene, sort=SORT_DEFAULT) {
 
     const sceneBottom = scene.dimensions.sceneRect.bottom;
     const sceneLeft   = scene.dimensions.sceneRect.left;
@@ -468,7 +466,7 @@ function oneScene(path, scene, sort=100) {
     zip.folder(path).file(zipfilename(scene), markdown, { binary: false });
 }
 
-function onePlaylist(path, playlist, sort=100) {
+function onePlaylist(path, playlist, sort=SORT_DEFAULT) {
     // playlist.description
     // playlist.fade
     // playlist.mode
@@ -500,7 +498,7 @@ function onePlaylist(path, playlist, sort=100) {
     zip.folder(path).file(zipfilename(playlist), markdown, { binary: false });
 }
 
-async function documentToJSON(path, doc, sort=100) {
+async function documentToJSON(path, doc, sort=SORT_DEFAULT) {
     // see Foundry exportToJSON
 
     const data = doc.toCompendium(null);
@@ -542,9 +540,9 @@ async function documentToJSON(path, doc, sort=100) {
     zip.folder(path).file(zipfilename(doc), markdown, { binary: false });
 }
 
-async function maybeTemplate(path, doc, sort=100) {
+async function maybeTemplate(path, doc, sort=SORT_DEFAULT) {
     const templatePath = templateFile(doc);
-    if (!templatePath) return documentToJSON(path, doc, sort=100);
+    if (!templatePath) return documentToJSON(path, doc, sort);
     // console.log(`Using handlebars template '${templatePath}' for '${doc.name}'`)
 
     // Always upload the IMG, if present, but we won't include the corresponding markdown
@@ -553,7 +551,7 @@ async function maybeTemplate(path, doc, sort=100) {
     // Apply the supplied template file:
     // Foundry renderTemplate only supports templates with file extensions: html, handlebars, hbs
     // Foundry filePicker hides all files with extension html, handlebars, hbs
-    const markdown = await myRenderTemplate(templatePath, doc).catch(err => {
+    const markdown = await myRenderTemplate(templatePath, doc, sort).catch(err => {
         ui.notifications.warn(`Handlers Error: ${err.message}`);
         throw err;
     })
@@ -561,7 +559,8 @@ async function maybeTemplate(path, doc, sort=100) {
     zip.folder(path).file(zipfilename(doc), markdown, { binary: false });
 }
 
-async function oneDocument(path, doc, sort=100) {
+async function oneDocument(path, doc, sort=SORT_DEFAULT) {
+    console.log("Name " + doc.name)
     if (doc instanceof JournalEntry)
         await oneJournal(path, doc, sort);
     else if (doc instanceof RollTable)
@@ -602,7 +601,7 @@ async function oneChatLog(path, chatlog) {
     zip.folder(path).file(filename, log, { binary: false });
 }
 
-async function oneFolder(path, folder, sort=100) {
+async function oneFolder(path, folder, sort=SORT_DEFAULT) {
     let subpath = formpath(path, validFilename(folder.name));
     let toc = [];
     let subsort = sort * 10;
@@ -625,7 +624,7 @@ async function oneFolder(path, folder, sort=100) {
     }
 }
 
-async function onePack(path, pack, sort=100) {
+async function onePack(path, pack, sort=SORT_DEFAULT) {
     let toc = [];
     let type = pack.metadata.type;
     console.debug(`Collecting pack '${pack.title}'`)
@@ -656,7 +655,7 @@ async function onePack(path, pack, sort=100) {
     await compendiumFolders(subpath, folders, documents, depth, sort);
 }
 
-async function onePackFolder(path, folder, sort=100) {
+async function onePackFolder(path, folder, sort=SORT_DEFAULT) {
     let subpath = formpath(path, validFilename(folder.name));
     let subsort = sort * 10;
     for (const pack of game.packs.filter(pack => pack.folder === folder)) {
@@ -689,7 +688,7 @@ function tocFolderLink (path, folder) {
 
 // Creat a Table Of Contents file given the path of the file, name of the file,
 // and an array of links to include in the Table of Contents
-async function tableOfContents (path, name, fileName, toc, sort=100) {
+async function tableOfContents (path, name, fileName, toc, sort=SORT_DEFAULT) {
     let markdown = frontmatterFolder(name, sort, true, true) + "\n## Table of Contents\n";
     for (const link of toc) {
         markdown += link != ITEM_BREAK ? `\n- ${link}` : '\n---';
@@ -697,7 +696,7 @@ async function tableOfContents (path, name, fileName, toc, sort=100) {
     zip.folder(path).file(fileName,  markdown, { binary: false });
 }
 
-async function compendiumFolders(path, folders, docs, depth, sort=100) {
+async function compendiumFolders(path, folders, docs, depth, sort=SORT_DEFAULT) {
     let subsort = sort * 10;
     for (const folder of folders) {
         let toc = [];
@@ -713,6 +712,7 @@ async function compendiumFolders(path, folders, docs, depth, sort=100) {
                     toc.push(tocFolderLink(formpath(subpath, validFilename(child.folder.name)), child.folder));
                 }
                 await compendiumFolders(subpath, childFolders, docs, depth + 1, subsort);
+                subsort += 1;
             }
 
             let contents = folder.contents;
@@ -729,12 +729,6 @@ async function compendiumFolders(path, folders, docs, depth, sort=100) {
                 }
             }
             if(toc.length) {
-                let sort = 0;
-                if (depth > 0) {
-                    sort = folder.sort * depth;
-                } else {
-                    sort = folder.sort;
-                }
                 tableOfContents(subpath, folder.name, zipfilename(folder), toc, subsort);
             }
         }

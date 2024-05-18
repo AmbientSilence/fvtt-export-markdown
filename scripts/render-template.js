@@ -1,6 +1,8 @@
 // Foundry only allows the templatePath to be html, hbs, handlebars
 // Foundry FilePicker dialog doesn't make files with those extensions pickable or uploadable
 
+import { SORT_DEFAULT, SORT_PADDING } from "./export-markdown.js";
+
 // Global template cache
 let _templateCache = {};
 
@@ -8,8 +10,9 @@ export function clearTemplateCache() {
     _templateCache = {};
 }
 
-export async function myRenderTemplate(templatePath, data) {
+export async function myRenderTemplate(templatePath, data, sort=SORT_DEFAULT) {
     const template = await myGetTemplate(templatePath);
+    data.sortOrder = sort.toString().padStart(SORT_PADDING,'0');
     return template(data || {}, {
       allowProtoMethodsByDefault: true,
       allowProtoPropertiesByDefault: true
