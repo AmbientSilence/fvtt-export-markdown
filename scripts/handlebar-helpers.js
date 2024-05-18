@@ -11,6 +11,13 @@ export const registerHandlebarsHelpers = function () {
             });
             */
 
+    Handlebars.registerHelper('validTag', function (text) {
+        if (text) {
+                const regexp = /[\s<>:"/\\|?*]/g;
+                return text.replaceAll(regexp, '_');
+        }
+    });
+
     // Convert HTML to Markdown
     Handlebars.registerHelper('convertHtml', function (context, text) {
         if (text) {
@@ -38,8 +45,10 @@ export const registerHandlebarsHelpers = function () {
 
     // Convert String to Title Case
     Handlebars.registerHelper('toTitleCase', function (str) {
-        return str.toLowerCase().split(' ').map(function(word) {
-                return (word.charAt(0).toUpperCase() + word.slice(1));
-        }).join(' ')
+        if(str) {
+                return str.toLowerCase().split(' ').map(function(word) {
+                        return (word.charAt(0).toUpperCase() + word.slice(1));
+                }).join(' ')
+        }
     });
 }
