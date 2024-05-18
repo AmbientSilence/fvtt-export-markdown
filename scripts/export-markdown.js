@@ -296,11 +296,10 @@ function frontmatter(doc, sort=100, showheader=true, index=false) {
     let header = showheader ? `\n# ${doc.name}\n` : "";
     let sortFormated = sort.toString().padStart(sortPadding,'0');
     let title = index ? "Index of " + doc.name : doc.name;
-    console.log(doc.name + " sort = " + sort + " | formated sort = " + sortFormated);
     return FRONTMATTER + 
         `title: "${title}"\n` + 
         `icon: "${DOCUMENT_ICON.lookup(doc)}"\n` +
-        `aliases: "${doc.name}"\n` + 
+        `aliases: "${title}"\n` + 
         `foundryId: ${doc.uuid}\n` + 
         `sortOrder: "${sortFormated}"\n` + 
         `tags:\n  - ${doc.documentName}\n` +
@@ -312,11 +311,10 @@ function frontmatterFolder(name, sort=100, showheader=true, index=false) {
     let header = showheader ? `\n# ${name}\n` : "";
     let sortFormated = sort.toString().padStart(sortPadding,'0');
     let title = index ? "Index of " + name : name;
-    console.log(name + " sort = " + sort + " | formated sort = " + sortFormated);
     return FRONTMATTER + 
         `title: "${title}"\n` + 
         `icon: ":folder:"\n` +
-        `aliases: "${name}"\n` +
+        `aliases: "${title}"\n` +
         `sortOrder: "${sortFormated}"\n` +  
         `tags:\n  - "toc"\n` +
         FRONTMATTER +
@@ -332,11 +330,14 @@ async function oneJournal(path, journal, sort=100) {
         // This is a Folder note, so goes INSIDE the folder for this journal entry
         let markdown = frontmatter(journal, sort, true, true) + "\n## Table of Contents\n";
         for (let page of journal.pages.contents.sort((a,b) => a.sort - b.sort)) {
+            
+            // Rename page note if it already exists in the zip file.
+            let name = journal.name == page.name ? page.name + " " + 1 : page.name;
             markdown += `\n${' '.repeat(2*(page.title.level-1))}- ${formatLink(docfilename(page), page.name)}`;
         }
         // Filename must match the folder name
-        const tocName = use_uuid_for_journal_folder ? zipfilename(journal) : PREFIX + zipfilename(journal);
-        zip.folder(path).file(tocName, markdown, { binary: false });
+        const tocName = use_uuid_for_journal_folder ? zipfilename(journal) : zipfilename(journal);
+        zip.folder(subpath).file(tocName, markdown, { binary: false });
     }
 
     let subsort = journal.pages.size > 1 ? sort * 10 : sort;
@@ -360,7 +361,15 @@ async function oneJournal(path, journal, sort=100) {
         }
         if (markdown) {
             markdown = frontmatter(page, subsort, page.title.show) + markdown;
-            zip.folder(subpath).file(`${notefilename(page)}.md`, markdown, { binary: false });
+
+            // Rename page note if it already exists in the zip file.
+            let i = 1;
+            let name =  notefilename(page);
+            while (`${subpath}/${name}.md` in zip.files) {
+                name = notefilename(page) + " " + i;
+            }
+            
+            zip.folder(subpath).file(`${name}.md`, markdown, { binary: false });
         }
         subsort += 1;
     }
@@ -601,7 +610,7 @@ async function oneFolder(path, folder, sort=100) {
         toc.push(tocLink(subpath, doc));
     }
     if(toc.length) {
-        tableOfContents(path, folder.name, zipfilename(folder), toc, sort);
+        tableOfContents(subpath, folder.name, zipfilename(folder), toc, sort);
     }
     for (const childfolder of folder.getSubfolders(/*recursive*/false)) {
         await oneFolder(subpath, childfolder);
@@ -618,7 +627,7 @@ async function onePack(path, pack, sort=100) {
     let subsort = sort * 10;
     for (const folder of folders) {
         subsort += 1;
-        toc.push(tocFolderLink(subpath, folder, subsort));
+        toc.push(tocFolderLink(formpath(subpath, validFilename(folder.name)), folder, subsort));
     }
     for (const doc of documents.sort((a,b) => a.sort - b.sort)) {
         if (!doc.folder) {
@@ -632,7 +641,7 @@ async function onePack(path, pack, sort=100) {
         sort = pack.sort;
     }*/
     if(toc.length) {
-        tableOfContents(path, pack.title, zipfilename(pack), toc, sort);
+        tableOfContents(subpath, pack.title, zipfilename(pack), toc, sort);
     }
     await compendiumFolders(subpath, pack.folders, documents, 1, sort);
 }
@@ -646,19 +655,17 @@ async function onePackFolder(path, folder, sort=100) {
     }
 }
 
-const PREFIX = "";
-
 function tocLink (path, doc) {
     let docName;
     let subpath;
     if (doc instanceof JournalEntry && doc.pages.size > 1) {
-        docName = PREFIX + doc.name;
+        docName = doc.name;
         subpath = formpath(".", validFilename(doc.name));
     } else {
         docName = doc.name;
         subpath = ".";
     }
-    const docPath = formpath(path, use_uuid_for_journal_folder ? docfilename(doc) : validFilename(docName));
+    const docPath = formpath(subpath, use_uuid_for_journal_folder ? docfilename(doc) : validFilename(docName));
     const docLink = formatLink(docPath, doc.name)
     return docLink;
 }
@@ -677,7 +684,7 @@ async function tableOfContents (path, name, fileName, toc, sort=100) {
     for (const link of toc) {
         markdown += `\n- ${link}`;
     }
-    zip.folder(path).file(PREFIX + fileName, markdown, { binary: false });
+    zip.folder(path).file(fileName, markdown, { binary: false });
 }
 
 async function compendiumFolders(path, folders, docs, depth, sort=100) {
@@ -693,7 +700,7 @@ async function compendiumFolders(path, folders, docs, depth, sort=100) {
                 let childFolders = [];
                 for (const child of children) {
                     childFolders.push(child.folder);
-                    toc.push(tocFolderLink(subpath, child));
+                    toc.push(tocFolderLink(subpath, child.folder));
                 }
                 await compendiumFolders(subpath, childFolders, docs, depth + 1, subsort);
             }
@@ -715,7 +722,7 @@ async function compendiumFolders(path, folders, docs, depth, sort=100) {
                 } else {
                     sort = folder.sort;
                 }
-                tableOfContents(path, folder.name, zipfilename(folder), toc, subsort);
+                tableOfContents(subpath, folder.name, zipfilename(folder), toc, subsort);
             }
         }
     }
@@ -737,39 +744,43 @@ export async function exportMarkdown(from, zipname) {
     zip = new JSZip();
 
     const TOP_PATH = "";
+    let sort = 101;
 
     if (from instanceof Folder) {
         console.debug(`Processing one Folder`)
         // Do we put in the full hierarchy that might be ABOVE the indicated folder
         if (from.type === "Compendium")
-            await onePackFolder(TOP_PATH, from);
+            await onePackFolder(TOP_PATH, from, sort);
         else
-            await oneFolder(TOP_PATH, from);
+            await oneFolder(TOP_PATH, from, sort);
     }
     else if (is_v10 ? from instanceof SidebarDirectory : from instanceof DocumentDirectory) {
         for (const doc of from.documents) {
-            await oneDocument(folderpath(doc), doc);
+            await oneDocument(folderpath(doc), doc, sort);
+            sort += 1;
         }
     } 
     else if (from instanceof CompendiumDirectory) {
         // from.collection does not exist in V10
         for (const doc of game.packs) {
-            await onePack(folderpath(doc), doc);
+            await onePack(folderpath(doc), doc, sort);
+            sort += 1;
         }
     } 
     else if (from instanceof CompendiumCollection) {
-        await onePack(TOP_PATH, from);
+        await onePack(TOP_PATH, from, sort);
     } 
     else if (from instanceof CombatTracker) {
         for (const combat of from.combats) {
-            await oneDocument(TOP_PATH, combat);
+            await oneDocument(TOP_PATH, combat, sort);
+            sort += 1;
         }
     }
     else if (from instanceof ChatLog) {
         await oneChatLog(from.title, from);
     } 
     else
-        await oneDocument(TOP_PATH, from);
+        await oneDocument(TOP_PATH, from, sort);
 
     let blob = await zip.generateAsync({ type: "blob" });
     await saveDataToFile(blob, `${validFilename(zipname)}.zip`);
