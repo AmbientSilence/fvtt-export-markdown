@@ -292,6 +292,27 @@ export function convertHtml(doc, html) {
     return markdown;
 }
 
+function convertPage (page) {
+    let markdown;
+    switch (page.type) {
+        case "text":
+            switch (page.text.format) {
+                case 1: // HTML
+                    markdown = convertHtml(page, page.text.content);
+                    break;
+                case 2: // MARKDOWN
+                    markdown = page.text.markdown;
+                    break;
+            }
+            break;
+        case "image": case "pdf": case "video":
+            if (page.src) markdown = fileconvert(page.src) + EOL;
+            if (page.image?.caption) markdown += EOL + page.image.caption + EOL;
+            break;
+    }
+    return markdown;
+}
+
 function frontmatter(doc, sort=SORT_DEFAULT, showheader=true, index=false) {
     let header = showheader ? `\n# ${doc.name}\n` : "";
     let sortFormated = sort.toString().padStart(SORT_PADDING,'0');
@@ -323,14 +344,18 @@ function frontmatterFolder(name, sort=SORT_DEFAULT, showheader=true, index=false
 
 async function oneJournal(path, journal, sort=SORT_DEFAULT) {
     let subpath = path;
+    const pages = journal.pages.contents;
     if (journal.pages.size > 1) {
         // Put all the notes in a sub-folder
         subpath = formpath(path, use_uuid_for_journal_folder ? docfilename(journal) : validFilename(journal.name));
         // TOC page 
         // This is a Folder note, so goes INSIDE the folder for this journal entry
-        let markdown = frontmatter(journal, sort, true, true) + "\n## Table of Contents\n";
-        for (let page of journal.pages.contents.sort((a,b) => a.sort - b.sort)) {
-            
+        let markdown = frontmatter(journal, sort, true, false);
+        if (pages.find(page => page.name === journal.name)) {
+            markdown += "\n" + convertPage(pages.find(page => page.name === journal.name)) + "\n\n---\n";
+        }
+        markdown += "\n## Table of Contents\n";
+        for (let page of pages.sort((a,b) => a.sort - b.sort)) {
             // Rename page note if it already exists in the zip file.
             let name = journal.name == page.name ? page.name + " " + 1 : page.name;
             markdown += `\n${' '.repeat(2*(page.title.level-1))}- ${formatLink(docfilename(page), page.name)}`;
@@ -341,37 +366,23 @@ async function oneJournal(path, journal, sort=SORT_DEFAULT) {
     }
 
     let subsort = journal.pages.size > 1 ? sort * 10 : sort;
-    for (const page of journal.pages.contents.sort((a,b) => a.sort - b.sort)) {
-        let markdown;
-        switch (page.type) {
-            case "text":
-                switch (page.text.format) {
-                    case 1: // HTML
-                        markdown = convertHtml(page, page.text.content);
-                        break;
-                    case 2: // MARKDOWN
-                        markdown = page.text.markdown;
-                        break;
-                }
-                break;
-            case "image": case "pdf": case "video":
-                if (page.src) markdown = fileconvert(page.src) + EOL;
-                if (page.image?.caption) markdown += EOL + page.image.caption + EOL;
-                break;
-        }
-        if (markdown) {
-            markdown = frontmatter(page, subsort, page.title.show) + markdown;
-
-            // Rename page note if it already exists in the zip file.
+    for (const page of pages.sort((a,b) => a.sort - b.sort)) {
+        // If the page is the Folder Note, skip it since it was alread processed.
+        if(page.name != journal.name || journal.pages.size == 1) {
+            // Rename page note if it already exists in the zip file but isn't the Folder Note.
             let i = 1;
             let name =  notefilename(page);
             while (`${subpath}/${name}.md` in zip.files) {
                 name = notefilename(page) + " " + i;
             }
-            
-            zip.folder(subpath).file(`${name}.md`, markdown, { binary: false });
+            let markdown = convertPage(page);
+            if (markdown) {
+                markdown = frontmatter(page, subsort, page.title.show) + markdown;
+                
+                zip.folder(subpath).file(`${name}.md`, markdown, { binary: false });
+            }
+            subsort += 1;
         }
-        subsort += 1;
     }
 }
 
@@ -560,7 +571,6 @@ async function maybeTemplate(path, doc, sort=SORT_DEFAULT) {
 }
 
 async function oneDocument(path, doc, sort=SORT_DEFAULT) {
-    console.log("Name " + doc.name)
     if (doc instanceof JournalEntry)
         await oneJournal(path, doc, sort);
     else if (doc instanceof RollTable)
@@ -689,7 +699,7 @@ function tocFolderLink (path, folder) {
 // Creat a Table Of Contents file given the path of the file, name of the file,
 // and an array of links to include in the Table of Contents
 async function tableOfContents (path, name, fileName, toc, sort=SORT_DEFAULT) {
-    let markdown = frontmatterFolder(name, sort, true, true) + "\n## Table of Contents\n";
+    let markdown = frontmatterFolder(name, sort, true, false) + "\n## Table of Contents\n";
     for (const link of toc) {
         markdown += link != ITEM_BREAK ? `\n- ${link}` : '\n---';
     }
